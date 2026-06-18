@@ -1,0 +1,32 @@
+name: Update IPTV Playlists
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # Runs daily at 4:00 AM UTC
+  workflow_dispatch: # Allows you to trigger it manually via a button
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Run Cleaning Script
+        run: python clean_m3u.py
+
+      - name: Upload to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          keep_files: false
