@@ -5,7 +5,7 @@ import time
 
 # --- CONFIGURATION ---
 
-OUTPUT_DIR = "/var/www/html/iptv"
+OUTPUT_DIR = "./public"
 
 PLAYLIST_PROFILES = {
     "us": "https://iptv-org.github.io/iptv/countries/us.m3u",
@@ -15,40 +15,37 @@ PLAYLIST_PROFILES = {
     "zho": "https://iptv-org.github.io/iptv/languages/zho.m3u"
 }
 
+# The keys represent the exact filename that will be saved
 EPG_SOURCES = {
-    "guide_us": "https://iptv-org.github.io/epg/guides/us/tvguide.com.epg.xml",
-    "guide_cn": "https://epg.112114.xyz/pp.xml"
+    "guide_us.xml.gz": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_guide.xml.gz",
+    "guide_cn.xml": "https://epg.112114.xyz/pp.xml"
 }
 
-TIMEOUT = 5            
-# Reduced to 20 to prevent overwhelming smaller systems/VMs
-MAX_WORKERS = 20       
+TIMEOUT = 5
+MAX_WORKERS = 15
 
 # --- FUNCTIONS ---
 
 def check_stream(extinf_line, stream_url):
-    """Pings the stream URL and closes the socket immediately to prevent memory leaks."""
     try:
-        # The 'with' context manager automatically closes the hanging video stream connection
         with requests.get(stream_url, timeout=TIMEOUT, stream=True) as response:
             if response.status_code == 200:
                 return f"{extinf_line}\n{stream_url}\n"
     except requests.RequestException:
-        pass 
+        pass
     return None
 
 def clean_single_playlist(name, url):
     print(f"[{name.upper()}] Fetching source playlist...")
     try:
-        response = requests.get(url)
-        response.raise_for_status()
+        with requests.get(url) as response:
+            response.raise_for_status()
+            lines = response.text.splitlines()
     except requests.RequestException as e:
-        print(f"[{name.upper()}] Error downloading: {e}")
+        print(f"[{name.upper()}] Error: {e}")
         return
 
-    lines = response.text.splitlines()
     channels = []
-
     for i in range(len(lines)):
         if lines[i].startswith("#EXTINF"):
             if i + 1 < len(lines) and lines[i+1].startswith("http"):
@@ -67,20 +64,22 @@ def clean_single_playlist(name, url):
     output_path = os.path.join(OUTPUT_DIR, f"{name}.m3u")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(working_m3u)
-    print(f"[{name.upper()}] Cleaned playlist saved to {output_path}")
+    print(f"[{name.upper()}] Saved to {output_path}")
 
-def fetch_epg(name, url):
-    print(f"[{name.upper()}] Downloading EPG database...")
+def fetch_epg(filename, url):
+    print(f"[{filename.upper()}] Downloading EPG database...")
     try:
-        response = requests.get(url, timeout=20) 
-        response.raise_for_status()
-        
-        output_path = os.path.join(OUTPUT_DIR, f"{name}.xml")
-        with open(output_path, "wb") as f:
-            f.write(response.content)
-        print(f"[{name.upper()}] EPG successfully saved to {output_path}")
-    except requests.RequestException as e:
-        print(f"[{name.upper()}] EPG Download failed: {e}")
+        with requests.get(url, timeout=20) as response:
+            response.raise_for_status()
+            
+            # Save the file exactly as named in the dictionary (keeps .gz extension)
+            output_path = os.path.join(OUTPUT_DIR, filename)
+            with open(output_path, "wb") as f:
+                f.write(response.content)
+                
+            print(f"[{filename.upper()}] EPG successfully saved to {output_path}")
+    except Exception as e:
+        print(f"[{filename.upper()}] EPG Download failed: {e}")
 
 # --- MAIN EXECUTION ---
 
@@ -88,14 +87,10 @@ if __name__ == "__main__":
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     start_time = time.time()
     
-    print("\n=== STARTING IPTV AGGREGATOR ===")
-    
     for name, url in PLAYLIST_PROFILES.items():
         clean_single_playlist(name, url)
-        print("-" * 30)
         
-    for name, url in EPG_SOURCES.items():
-        fetch_epg(name, url)
+    for filename, url in EPG_SOURCES.items():
+        fetch_epg(filename, url)
         
-    print("================================")
-    print(f"All updates completed in {round(time.time() - start_time, 2)} seconds.\n")
+    print(f"Completed in {round(time.time() - start_time, 2)}s.")
